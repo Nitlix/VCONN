@@ -58,7 +58,7 @@ export default class VCONNServer<TActions extends ActionCollection> {
 
         try {
             const validatedInput = action.schema.parse(jsonData.input);
-            const result = await action.handler(validatedInput);
+            const result = await action.handler({ ...validatedInput, request });
             return this.jsonResponseMaker({ data: result });
         } catch (error) {
             if (error instanceof z.ZodError) {
