@@ -1,0 +1,13 @@
+{
+    "name": "vconn",
+    "version": "1.0.0",
+    "description": "VCONN is a lightweight, end-to-end type safety ensuring communication library mainly for replacing Next.JS' Server Actions.",
+    "main": "./dist/exports.js",
+    "keywords": [],
+    "author": "NITLIX INTERNATIONAL",
+    "license": "MIT",
+    "dependencies": {
+        "@types/node": "^22.15.18",
+        "zod": "^3.24.4"
+    }
+}
