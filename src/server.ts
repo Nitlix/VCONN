@@ -28,9 +28,9 @@ export default class VCONNServer<TActions extends ActionCollection> {
     }
 
     public async handleRequest(request: Request) {
-        let jsonData: any;
+        let jsonData;
         try {
-            jsonData = await request.json();
+            jsonData = (await request.json()) as any;
         } catch (error) {
             this.debugLog
                 ? this.logger({
@@ -46,9 +46,16 @@ export default class VCONNServer<TActions extends ActionCollection> {
             );
         }
 
+        if (!jsonData.action) {
+            return this.jsonResponseMaker(
+                { error: "Action not found" },
+                { status: 400 }
+            );
+        }
+
         const action = this.actionCollection[jsonData.action];
         if (!action) {
-            return Response.json(
+            return this.jsonResponseMaker(
                 {
                     error: "Action not found",
                 },
@@ -58,7 +65,7 @@ export default class VCONNServer<TActions extends ActionCollection> {
 
         try {
             const validatedInput = action.schema.parse(jsonData.input);
-            const result = await action.handler({ ...validatedInput, request });
+            const result = await action.handler(validatedInput);
             return this.jsonResponseMaker({ data: result });
         } catch (error) {
             if (error instanceof z.ZodError) {
@@ -87,7 +94,7 @@ export default class VCONNServer<TActions extends ActionCollection> {
     }
 
     // Keep this for internal use only
-    private getActionCollection(): TActions {
+    public getActionCollection(): TActions {
         return this.actionCollection;
     }
 }

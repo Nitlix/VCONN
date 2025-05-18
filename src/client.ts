@@ -1,33 +1,37 @@
-import { ActionTypeCollection, ClientActions, VCONNClientInit } from "./types";
+import { ActionCollection, CallableAction } from "./types";
 
-export default class VCONNClientConstructor<
-    TActionTypes extends ActionTypeCollection
-> {
+export default class VCONNClientConstructor<TActions extends ActionCollection> {
     private baseUrl: string;
-    private actionTypes: TActionTypes;
+    private actions: TActions;
 
     public constructor({
-        actionTypes,
+        actions,
         baseUrl,
-    }: VCONNClientInit<TActionTypes>) {
+    }: {
+        actions: TActions;
+        baseUrl: string;
+    }) {
         this.baseUrl = baseUrl;
-        this.actionTypes = actionTypes;
+        this.actions = actions;
     }
 
-    public getClient(): ClientActions<TActionTypes> {
-        const client = {} as ClientActions<TActionTypes>;
+    public getClient(): {
+        [K in keyof TActions]: TActions[K] extends {
+            handler: (input: infer TInput) => Promise<infer TOutput>;
+        }
+            ? CallableAction<Omit<TInput, "request">, TOutput>
+            : never;
+    } {
+        const client = {} as any;
 
-        Object.keys(this.actionTypes).forEach((key) => {
-            (client as any)[key] = async (input: any) => {
+        Object.keys(this.actions).forEach((key) => {
+            client[key] = async (input: any) => {
                 const response = await fetch(this.baseUrl, {
                     method: "POST",
                     body: JSON.stringify({ action: key, input }),
                 });
                 try {
                     const json = (await response.json()) as any;
-                    if (!json.data) {
-                        throw new Error("No data returned");
-                    }
                     if (json.error) {
                         throw new Error(json.error);
                     }
