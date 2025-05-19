@@ -1,6 +1,6 @@
 # Contributing to VCONN
 
-We're thrilled to have you here! 🎉 If you need any help or guidance while contributing to VCONN, don't hesitate to reach out on [Discord](https://discord.gg/nitlix) or [GitHub Discussions](https://github.com/nitlix/vconn/discussions).
+We're thrilled to have you here! 🎉
 
 ## Development Workflow
 
