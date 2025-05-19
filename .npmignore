@@ -1,5 +1,10 @@
 src/
+scripts/
 package-lock.json
 tsconfig.json
 
 tests/
+DOCS.md
+.git/
+.gitignore
+.gitattributes

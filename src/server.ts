@@ -53,6 +53,13 @@ export default class VCONNServer<TActions extends ActionCollection> {
             );
         }
 
+        if (!jsonData.input) {
+            return this.jsonResponseMaker(
+                { error: "Input not found" },
+                { status: 400 }
+            );
+        }
+
         const action = this.actionCollection[jsonData.action];
         if (!action) {
             return this.jsonResponseMaker(
@@ -64,7 +71,10 @@ export default class VCONNServer<TActions extends ActionCollection> {
         }
 
         try {
-            const validatedInput = action.schema.parse(jsonData.input);
+            const validatedInput = action.schema
+                ? action.schema.parse(jsonData.input)
+                : jsonData.input;
+
             const result = await action.handler(validatedInput);
             return this.jsonResponseMaker({ data: result });
         } catch (error) {

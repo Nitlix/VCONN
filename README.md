@@ -1,3 +1,8 @@
+<<<<<<< Updated upstream
+
+=======
+
+> > > > > > > Stashed changes
 
 <div align="center">
   <h1>VCONN</h1>
@@ -13,7 +18,11 @@
   <br />
 
   <figure>
+<<<<<<< Updated upstream
     <img src="https://static.nitlix.pro/github/VCONN_GITHUB.jpg" alt="Logo" />
+=======
+    <img src="https://static.nitlix.pro/github/vconnGithub.jpg" alt="Logo" />
+>>>>>>> Stashed changes
   </figure>
   
 </div>
@@ -22,7 +31,7 @@
 
 ## Intro
 
-VCONN is a lightweight, end-to-end type safety ensuring communication library that makes it easy to build and consume fully typesafe APIs without schemas or code generation. It's designed to be a modern alternative to Next.JS' Server Actions, providing better type safety and developer experience.
+VCONN is a lightweight, end-to-end type safe fullstack communications library that makes it easy to build fully typesafe APIs without schemas or code generation. It's designed to be a modern alternative to Next.JS' Server Actions, providing equivalent safety and developer experience at faster speeds and a lighter feel.
 
 ### Features
 
@@ -98,6 +107,10 @@ const client = new VCONNClientConstructor({
 const greeting = await client.greet({ name: "World" });
 console.log(greeting); // "Hello, World!"
 ```
+
+## Documentation
+
+For more detailed documentation, please refer to the [DOCS.md](DOCS.md) file!
 
 ## Contributing
 

@@ -10,7 +10,7 @@ export type DebugLogger = ({
 
 export type Action<TInput = any, TOutput = any> = {
     handler: (input: TInput & { request: Request }) => Promise<TOutput>;
-    schema: z.ZodSchema<TInput>;
+    schema?: z.ZodSchema<TInput>;
 };
 
 export type ActionType<TInput = any, TOutput = any> = {
