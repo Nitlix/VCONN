@@ -1,4 +1,3 @@
-# VCONN
 
 <div align="center">
   <h1>VCONN</h1>
