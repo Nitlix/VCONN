@@ -13,7 +13,7 @@
   <br />
 
   <figure>
-    <img src="https://static.nitlix.pro/github/UCONN_GITHUB.jpg" alt="Logo" />
+    <img src="https://static.nitlix.pro/github/VCONN_GITHUB.jpg" alt="Logo" />
   </figure>
   
 </div>
