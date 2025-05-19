@@ -1,9 +1,3 @@
-<<<<<<< Updated upstream
-
-=======
-
-> > > > > > > Stashed changes
-
 <div align="center">
   <h1>VCONN</h1>
   <h3>Lightweight, end-to-end type safe communications library.<br />Perfect for replacing Next.JS' Server Actions and tRPC.</h3>
@@ -18,13 +12,9 @@
   <br />
 
   <figure>
-<<<<<<< Updated upstream
     <img src="https://static.nitlix.pro/github/VCONN_GITHUB.jpg" alt="Logo" />
-=======
-    <img src="https://static.nitlix.pro/github/vconnGithub.jpg" alt="Logo" />
->>>>>>> Stashed changes
   </figure>
-  
+
 </div>
 
 <br />
