@@ -56,7 +56,7 @@ const actions = {
         schema: z.object({
             name: z.string(),
         }),
-        handler: async ({ name }) => {
+        handler: async ({ name }: { name: string }) => {
             return `Hello, ${name}!`;
         },
     },
@@ -99,7 +99,7 @@ const client = new VCONNClientConstructor({
 }).getClient();
 
 // Use the client
-// Fully type-safe, without importing function data directly.
+// Fully type-safe functions, without importing function data directly.
 const greeting = await client.greet({ name: "World" });
 console.log(greeting); // "Hello, World!"
 ```
