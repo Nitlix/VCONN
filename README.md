@@ -63,15 +63,10 @@ const actions = {
 };
 
 // Create the server
-const server = new VCONNServer({
+export const server = new VCONNServer({
     actions,
     debugLog: true, // Optional: Enable debug logging
 });
-
-// Handle requests (e.g., in Next.js API route)
-export async function POST(req: Request) {
-    return server.handleRequest(req);
-}
 ```
 
 ### Setup the Server Handler
