@@ -138,40 +138,127 @@ export default class VCONNPeer<
         this.methodCollection = init.methods;
     }
 
-    // Static method to import method types from another peer
-    public static importMethodTypes<TMethodTypes extends MethodTypeCollection>(
-        sourcePeer: VCONNPeer<any, any>
-    ): TMethodTypes {
-        return sourcePeer.getMethodTypes() as TMethodTypes;
-    }
-
     // Connect to a WebSocket server (client mode)
-    public async connect(url: string, useNativeWebSocket: boolean = false) {
-        if (useNativeWebSocket) {
-            this.socket = new this.socketType(url);
-        } else {
-            // TODO: Implement faster WebSocket client if needed
-            this.socket = new this.socketType(url);
+    public async connect(
+        url: string,
+        useNativeWebSocket: boolean = false,
+        options?: {
+            reconnect?: boolean;
+            maxReconnectAttempts?: number;
+            reconnectDelay?: number;
         }
+    ): Promise<CallableMethodsFromTypes<ToMethodTypes<TMethods>>> {
+        const {
+            reconnect = false,
+            maxReconnectAttempts = 5,
+            reconnectDelay = 1000,
+        } = options || {};
 
-        return new Promise<void>((resolve, reject) => {
-            if (!this.socket)
-                return reject(new Error("Socket not initialized"));
+        const attemptConnection = async (
+            attempt: number = 1
+        ): Promise<void> => {
+            // Close existing socket if it exists
+            if (this.socket) {
+                (this.socket as any).close();
+                this.socket = null;
+            }
 
-            (this.socket as any).onopen = () => {
-                this.setupSocketHandlers(this.socket!);
-                resolve();
-            };
+            if (useNativeWebSocket) {
+                this.socket = new this.socketType(url);
+            } else {
+                // TODO: Implement faster WebSocket client if needed
+                this.socket = new this.socketType(url);
+            }
 
-            (this.socket as any).onerror = (error: any) => {
-                if (this.debugLog) {
-                    this.logger({
-                        error: true,
-                        message: `WebSocket connection error: ${error}`,
-                    });
-                }
-                reject(error);
-            };
+            return new Promise<void>((resolve, reject) => {
+                if (!this.socket)
+                    return reject(new Error("Socket not initialized"));
+
+                (this.socket as any).onopen = () => {
+                    this.setupSocketHandlers(this.socket!);
+
+                    // Execute default "open" function if it exists
+                    const openHandler = this.methodCollection["open"];
+                    if (openHandler) {
+                        openHandler.handler({}, this.socket!).catch((error) => {
+                            if (this.debugLog) {
+                                this.logger({
+                                    error: true,
+                                    message: `Default 'open' handler error: ${error}`,
+                                });
+                            }
+                        });
+                    }
+
+                    resolve();
+                };
+
+                (this.socket as any).onerror = (error: any) => {
+                    if (this.debugLog) {
+                        this.logger({
+                            error: true,
+                            message: `WebSocket connection error: ${error}`,
+                        });
+                    }
+                    reject(error);
+                };
+
+                (this.socket as any).onclose = () => {
+                    if (this.debugLog) {
+                        this.logger({
+                            message: "WebSocket connection closed",
+                        });
+                    }
+
+                    // Execute default "close" function if it exists
+                    const closeHandler = this.methodCollection["close"];
+                    if (closeHandler) {
+                        closeHandler
+                            .handler({}, this.socket!)
+                            .catch((error) => {
+                                if (this.debugLog) {
+                                    this.logger({
+                                        error: true,
+                                        message: `Default 'close' handler error: ${error}`,
+                                    });
+                                }
+                            });
+                    }
+
+                    this.socket = null;
+
+                    // Attempt reconnection if enabled and attempts remaining
+                    if (reconnect && attempt < maxReconnectAttempts) {
+                        setTimeout(() => {
+                            if (this.debugLog) {
+                                this.logger({
+                                    message: `Attempting reconnection ${
+                                        attempt + 1
+                                    }/${maxReconnectAttempts}`,
+                                });
+                            }
+                            attemptConnection(attempt + 1).catch((error) => {
+                                if (this.debugLog) {
+                                    this.logger({
+                                        error: true,
+                                        message: `Reconnection attempt ${
+                                            attempt + 1
+                                        } failed: ${error}`,
+                                    });
+                                }
+                            });
+                        }, reconnectDelay);
+                    }
+                };
+            });
+        };
+
+        await attemptConnection();
+
+        // Return a caller for the connected peer
+        return this.getCaller({
+            socket: this.socket!,
+            methods: this.getMethodTypes(),
         });
     }
 
@@ -185,53 +272,6 @@ export default class VCONNPeer<
         } else {
             throw new Error(`Method ${String(methodName)} not found`);
         }
-    }
-
-    // Get callable methods for client usage
-    public getCallableMethods(): PeerMethods<TMethods> {
-        const methods = {} as PeerMethods<TMethods>;
-
-        Object.keys(this.methodCollection).forEach((key) => {
-            (methods as any)[key] = async (input: any) => {
-                if (!this.socket) {
-                    throw new Error(
-                        "Socket not set. Use setSocket() or connect() first."
-                    );
-                }
-
-                return new Promise((resolve, reject) => {
-                    const messageHandler = (event: any) => {
-                        try {
-                            const response = JSON.parse(event.data);
-                            if (response.error) {
-                                reject(new Error(response.error));
-                            } else {
-                                resolve(response.data);
-                            }
-                        } catch (error) {
-                            reject(error);
-                        }
-                        (this.socket as any).removeEventListener(
-                            "message",
-                            messageHandler
-                        );
-                    };
-
-                    (this.socket as any).addEventListener(
-                        "message",
-                        messageHandler
-                    );
-                    (this.socket as any).send(
-                        JSON.stringify({
-                            method: key,
-                            input,
-                        })
-                    );
-                });
-            };
-        });
-
-        return methods;
     }
 
     // Handle incoming messages with explicit data and socket
@@ -283,6 +323,22 @@ export default class VCONNPeer<
                             message: `Method execution error: ${error}`,
                         });
                     }
+
+                    // Execute default "error" function if it exists
+                    const errorHandler = this.methodCollection["error"];
+                    if (errorHandler) {
+                        errorHandler
+                            .handler({ error: error.message }, params.socket)
+                            .catch((handlerError) => {
+                                if (this.debugLog) {
+                                    this.logger({
+                                        error: true,
+                                        message: `Default 'error' handler error: ${handlerError}`,
+                                    });
+                                }
+                            });
+                    }
+
                     this.sendError(params.socket, "Method execution failed");
                 });
         } catch (error) {
@@ -308,23 +364,8 @@ export default class VCONNPeer<
             });
         };
 
-        (socket as any).onclose = () => {
-            if (this.debugLog) {
-                this.logger({
-                    message: "WebSocket connection closed",
-                });
-            }
-            this.socket = null;
-        };
-
-        (socket as any).onerror = (error: any) => {
-            if (this.debugLog) {
-                this.logger({
-                    error: true,
-                    message: `WebSocket error: ${error}`,
-                });
-            }
-        };
+        // Note: onclose and onerror are now handled in the connect method
+        // to support default functions and reconnection logic
     }
 
     private sendResponse(socket: TSocket, data: any) {

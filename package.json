@@ -1,6 +1,6 @@
 {
     "name": "vconn",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "VCONN is a lightweight, end-to-end type safety ensuring communication library mainly for replacing Next.JS' Server Actions.",
     "main": "./dist/exports.js",
     "types": "./dist/exports.d.ts",
