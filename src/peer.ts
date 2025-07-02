@@ -1,6 +1,11 @@
 import { z } from "zod";
 import vconnLog from "./(util)/vconnLog";
 
+// Generate a simple UUID-like string
+function generateTransitId(): string {
+    return "V-" + Math.random().toString(36).substring(2, 15);
+}
+
 // Types for method registration
 export type Method<TInput = any, TOutput = any> = {
     handler: (input: TInput, socket: any) => Promise<TOutput>;
@@ -60,15 +65,120 @@ export type CallableMethodsFromTypes<
         : never;
 };
 
+// Transit storage type
+type TransitData = {
+    method: string;
+    chunks: { [chunkIndex: number]: string };
+};
+
 // Call handler class with proper typing
 export class CallHandler<
     TMethodTypes extends MethodTypeCollection,
     TSocket = WebSocket
 > {
     private methodTypes: TMethodTypes;
+    private maxMessageLength: number = -1;
+    private safeCeiling: number = 10;
 
-    constructor(methodTypes: TMethodTypes) {
+    constructor(
+        methodTypes: TMethodTypes,
+        maxMessageLength: number = -1,
+        safeCeiling: number = 10
+    ) {
         this.methodTypes = methodTypes;
+        this.maxMessageLength = maxMessageLength;
+        this.safeCeiling = safeCeiling;
+    }
+
+    // Set safe ceiling for chunking
+    public setSafeCeiling(ceiling: number): void {
+        this.safeCeiling = ceiling;
+    }
+
+    // Get current safe ceiling
+    public getSafeCeiling(): number {
+        return this.safeCeiling;
+    }
+
+    // Helper method to calculate chunk limits for raw data
+    private calculateChunkLimits(
+        transitId: string,
+        inputString: string
+    ): number[] {
+        if (this.maxMessageLength === -1) return [inputString.length];
+
+        const chunkLimits: number[] = [];
+        let remainingString = inputString;
+        let chunkIndex = 0;
+
+        while (remainingString.length > 0) {
+            // Calculate overhead for this specific chunk: <TRANSIT_ID>.<CHUNK_INDEX>.
+            const chunkIndexStr = chunkIndex.toString();
+            const baseOverhead = `${transitId}.${chunkIndexStr}.`.length;
+            const maxChunkSize =
+                this.maxMessageLength - baseOverhead - this.safeCeiling;
+
+            if (remainingString.length <= maxChunkSize) {
+                // Last chunk
+                chunkLimits.push(remainingString.length);
+                break;
+            } else {
+                // Regular chunk
+                chunkLimits.push(maxChunkSize);
+                remainingString = remainingString.slice(maxChunkSize);
+            }
+            chunkIndex++;
+        }
+
+        return chunkLimits;
+    }
+
+    // Helper method to send chunked message using transit system
+    private async sendChunkedMessage(
+        socket: TSocket,
+        method: string,
+        input: any
+    ): Promise<void> {
+        const inputString = JSON.stringify(input);
+
+        if (
+            this.maxMessageLength === -1 ||
+            inputString.length <= this.maxMessageLength
+        ) {
+            // No chunking needed
+            (socket as any).send(JSON.stringify({ method, input }));
+            return;
+        }
+
+        // Generate transit ID
+        const transitId = generateTransitId();
+
+        // Send transit initiation message
+        (socket as any).send(
+            JSON.stringify({
+                method,
+                transit: transitId,
+            })
+        );
+
+        // Calculate chunk limits
+        const chunkLimits = this.calculateChunkLimits(transitId, inputString);
+
+        // Send chunks in raw format
+        let currentIndex = 0;
+        for (let i = 0; i < chunkLimits.length; i++) {
+            const chunk = inputString.slice(
+                currentIndex,
+                currentIndex + chunkLimits[i]
+            );
+            const isLastChunk = i === chunkLimits.length - 1;
+            const chunkIndex = isLastChunk ? -1 : i;
+
+            // Send raw data: <TRANSIT_ID>.<CHUNK_INDEX>.<RAW_DATA>
+            (socket as any).send(`${transitId}.${chunkIndex}.${chunk}`);
+
+            currentIndex += chunkLimits[i];
+        }
     }
 
     public getCaller(socket: TSocket): CallableMethodsFromTypes<TMethodTypes> {
@@ -95,12 +205,9 @@ export class CallHandler<
                     };
 
                     (socket as any).addEventListener("message", messageHandler);
-                    (socket as any).send(
-                        JSON.stringify({
-                            method: key,
-                            input,
-                        })
-                    );
+
+                    // Use chunked sending if message length is limited
+                    this.sendChunkedMessage(socket, key, input);
                 });
             };
         });
@@ -130,6 +237,9 @@ export default class VCONNPeer<
     private debugLog: boolean = false;
     private socketType: new (url: string) => TSocket;
     protected socket: TSocket | null = null;
+    private maxMessageLength: number = -1; // -1 means no limit
+    private safeCeiling: number = 10; // Default safe ceiling
+    private transitStorage: Map<string, TransitData> = new Map();
 
     public constructor(init: PeerInit<TMethods, TSocket>) {
         this.debugLog = init.debugLog ?? false;
@@ -138,7 +248,155 @@ export default class VCONNPeer<
         this.methodCollection = init.methods;
     }
 
-    // Connect to a WebSocket server (client mode)
+    // Set maximum message length for chunking
+    public setMaxMessageLength(length: number): void {
+        this.maxMessageLength = length;
+    }
+
+    // Get current maximum message length
+    public getMaxMessageLength(): number {
+        return this.maxMessageLength;
+    }
+
+    // Set safe ceiling for chunking
+    public setSafeCeiling(ceiling: number): void {
+        this.safeCeiling = ceiling;
+    }
+
+    // Get current safe ceiling
+    public getSafeCeiling(): number {
+        return this.safeCeiling;
+    }
+
+    // Helper method to calculate chunk limits for raw data
+    private calculateChunkLimits(
+        transitId: string,
+        inputString: string
+    ): number[] {
+        if (this.maxMessageLength === -1) return [inputString.length];
+
+        const chunkLimits: number[] = [];
+        let remainingString = inputString;
+        let chunkIndex = 0;
+
+        while (remainingString.length > 0) {
+            // Calculate overhead for this specific chunk: <TRANSIT_ID>.<CHUNK_INDEX>.
+            const chunkIndexStr = chunkIndex.toString();
+            const baseOverhead = `${transitId}.${chunkIndexStr}.`.length;
+            const maxChunkSize =
+                this.maxMessageLength - baseOverhead - this.safeCeiling;
+
+            if (remainingString.length <= maxChunkSize) {
+                // Last chunk
+                chunkLimits.push(remainingString.length);
+                break;
+            } else {
+                // Regular chunk
+                chunkLimits.push(maxChunkSize);
+                remainingString = remainingString.slice(maxChunkSize);
+            }
+            chunkIndex++;
+        }
+
+        return chunkLimits;
+    }
+
+    // Helper method to send chunked message using transit system
+    private async sendChunkedMessage(
+        socket: TSocket,
+        method: string,
+        input: any
+    ): Promise<void> {
+        const inputString = JSON.stringify(input);
+
+        if (
+            this.maxMessageLength === -1 ||
+            inputString.length <= this.maxMessageLength
+        ) {
+            // No chunking needed
+            (socket as any).send(JSON.stringify({ method, input }));
+            return;
+        }
+
+        // Generate transit ID
+        const transitId = generateTransitId();
+
+        // Send transit initiation message
+        (socket as any).send(
+            JSON.stringify({
+                method,
+                transit: transitId,
+            })
+        );
+
+        // Calculate chunk limits
+        const chunkLimits = this.calculateChunkLimits(transitId, inputString);
+
+        // Send chunks in raw format
+        let currentIndex = 0;
+        for (let i = 0; i < chunkLimits.length; i++) {
+            const chunk = inputString.slice(
+                currentIndex,
+                currentIndex + chunkLimits[i]
+            );
+            const isLastChunk = i === chunkLimits.length - 1;
+            const chunkIndex = isLastChunk ? -1 : i;
+
+            // Send raw data: <TRANSIT_ID>.<CHUNK_INDEX>.<RAW_DATA>
+            (socket as any).send(`${transitId}.${chunkIndex}.${chunk}`);
+
+            currentIndex += chunkLimits[i];
+        }
+    }
+
+    // Create a manager with server methods (client mode)
+    public createManager<TMethodTypes extends MethodTypeCollection>(params: {
+        serverMethods: TMethodTypes;
+    }): CallableMethodsFromTypes<TMethodTypes> {
+        const { serverMethods } = params;
+
+        // Create a caller that will work once connected
+        const methods = {} as CallableMethodsFromTypes<TMethodTypes>;
+
+        Object.keys(serverMethods).forEach((key) => {
+            (methods as any)[key] = async (input: any) => {
+                if (!this.socket) {
+                    throw new Error("Not connected. Call connect() first.");
+                }
+
+                return new Promise((resolve, reject) => {
+                    const messageHandler = (event: any) => {
+                        try {
+                            const response = JSON.parse(event.data);
+                            if (response.error) {
+                                reject(new Error(response.error));
+                            } else {
+                                resolve(response.data);
+                            }
+                        } catch (error) {
+                            reject(error);
+                        }
+                        (this.socket as any).removeEventListener(
+                            "message",
+                            messageHandler
+                        );
+                    };
+
+                    (this.socket as any).addEventListener(
+                        "message",
+                        messageHandler
+                    );
+
+                    // Use chunked sending if message length is limited
+                    this.sendChunkedMessage(this.socket!, key, input);
+                });
+            };
+        });
+
+        return methods;
+    }
+
+    // Connect to a WebSocket server
     public async connect(
         url: string,
         useNativeWebSocket: boolean = false,
@@ -147,7 +405,7 @@ export default class VCONNPeer<
             maxReconnectAttempts?: number;
             reconnectDelay?: number;
         }
-    ): Promise<CallableMethodsFromTypes<ToMethodTypes<TMethods>>> {
+    ): Promise<void> {
         const {
             reconnect = false,
             maxReconnectAttempts = 5,
@@ -254,12 +512,6 @@ export default class VCONNPeer<
         };
 
         await attemptConnection();
-
-        // Return a caller for the connected peer
-        return this.getCaller({
-            socket: this.socket!,
-            methods: this.getMethodTypes(),
-        });
     }
 
     // Edit a method's handler function (types remain the same)
@@ -280,29 +532,54 @@ export default class VCONNPeer<
         try {
             jsonData = JSON.parse(params.data);
         } catch (error) {
+            // Check if this is a raw transit chunk
+            if (typeof params.data === "string" && params.data.includes(".")) {
+                this.handleTransitChunk(params.data, params.socket);
+                return;
+            }
+
             if (this.debugLog) {
                 this.logger({
                     error: true,
                     message: "Invalid JSON received",
                 });
             }
-            this.sendError(params.socket, "Invalid JSON");
             return;
         }
 
         if (!jsonData.method) {
-            this.sendError(params.socket, "Method not found");
+            if (this.debugLog) {
+                this.logger({
+                    error: true,
+                    message: "Method not found in request",
+                });
+            }
+            return;
+        }
+
+        // Handle transit initiation messages
+        if (jsonData.transit) {
+            this.handleTransitInitiation(jsonData, params.socket);
             return;
         }
 
         if (!jsonData.input) {
-            this.sendError(params.socket, "Input not found");
+            if (this.debugLog) {
+                this.logger({
+                    error: true,
+                    message: "Input not found in request",
+                });
+            }
             return;
         }
 
         const method = this.methodCollection[jsonData.method];
         if (!method) {
-            this.sendError(params.socket, "Method not found");
+            if (this.debugLog) {
+                this.logger({
+                    message: `Ignoring unfound method: ${jsonData.method}`,
+                });
+            }
             return;
         }
 
@@ -311,39 +588,38 @@ export default class VCONNPeer<
                 ? method.schema.parse(jsonData.input)
                 : jsonData.input;
 
-            method
-                .handler(validatedInput, params.socket)
-                .then((result) => {
-                    this.sendResponse(params.socket, result);
-                })
-                .catch((error) => {
-                    if (this.debugLog) {
-                        this.logger({
-                            error: true,
-                            message: `Method execution error: ${error}`,
+            // Execute the method handler without sending automatic response
+            method.handler(validatedInput, params.socket).catch((error) => {
+                if (this.debugLog) {
+                    this.logger({
+                        error: true,
+                        message: `Method execution error: ${error}`,
+                    });
+                }
+
+                // Execute default "error" function if it exists
+                const errorHandler = this.methodCollection["error"];
+                if (errorHandler) {
+                    errorHandler
+                        .handler({ error: error.message }, params.socket)
+                        .catch((handlerError) => {
+                            if (this.debugLog) {
+                                this.logger({
+                                    error: true,
+                                    message: `Default 'error' handler error: ${handlerError}`,
+                                });
+                            }
                         });
-                    }
-
-                    // Execute default "error" function if it exists
-                    const errorHandler = this.methodCollection["error"];
-                    if (errorHandler) {
-                        errorHandler
-                            .handler({ error: error.message }, params.socket)
-                            .catch((handlerError) => {
-                                if (this.debugLog) {
-                                    this.logger({
-                                        error: true,
-                                        message: `Default 'error' handler error: ${handlerError}`,
-                                    });
-                                }
-                            });
-                    }
-
-                    this.sendError(params.socket, "Method execution failed");
-                });
+                }
+            });
         } catch (error) {
             if (error instanceof z.ZodError) {
-                this.sendError(params.socket, "Invalid input", error.errors);
+                if (this.debugLog) {
+                    this.logger({
+                        error: true,
+                        message: `Input validation failed for method ${jsonData.method}: ${error.errors}`,
+                    });
+                }
             } else {
                 if (this.debugLog) {
                     this.logger({
@@ -351,7 +627,162 @@ export default class VCONNPeer<
                         message: `Method execution error: ${error}`,
                     });
                 }
-                this.sendError(params.socket, "Method execution failed");
+            }
+        }
+    }
+
+    // Handle transit initiation messages
+    private handleTransitInitiation(jsonData: any, socket: TSocket) {
+        const transitId = jsonData.transit;
+        const methodName = jsonData.method;
+
+        // Initialize transit storage
+        this.transitStorage.set(transitId, {
+            method: methodName,
+            chunks: {},
+        });
+
+        if (this.debugLog) {
+            this.logger({
+                message: `Transit initiated: ${transitId} for method: ${methodName}`,
+            });
+        }
+    }
+
+    // Handle raw transit chunks
+    private handleTransitChunk(rawData: string, socket: TSocket) {
+        // Parse raw data: <TRANSIT_ID>.<CHUNK_INDEX>.<RAW_DATA>
+        const parts = rawData.split(".");
+        if (parts.length < 3) {
+            if (this.debugLog) {
+                this.logger({
+                    error: true,
+                    message: "Invalid transit chunk format",
+                });
+            }
+            return;
+        }
+
+        const transitId = parts[0];
+        const chunkIndex = parseInt(parts[1]);
+        const chunkData = parts.slice(2).join("."); // Rejoin in case data contains dots
+
+        // Get transit data
+        const transitData = this.transitStorage.get(transitId);
+        if (!transitData) {
+            if (this.debugLog) {
+                this.logger({
+                    error: true,
+                    message: `Transit ID not found: ${transitId}`,
+                });
+            }
+            return;
+        }
+
+        // Store the chunk
+        transitData.chunks[chunkIndex] = chunkData;
+
+        // If this is the final chunk (chunk: -1), reassemble and process
+        if (chunkIndex === -1) {
+            try {
+                // Get all chunk indices and sort them
+                const chunkIndices = Object.keys(transitData.chunks)
+                    .map(Number)
+                    .filter((index) => index !== -1) // Exclude the final chunk
+                    .sort((a, b) => a - b);
+
+                // Reassemble the complete input string
+                let completeInputString = "";
+                for (const index of chunkIndices) {
+                    completeInputString += transitData.chunks[index];
+                }
+                completeInputString += transitData.chunks[-1]; // Add the final chunk
+
+                // Parse the reassembled JSON
+                const completeInput = JSON.parse(completeInputString);
+
+                // Clean up transit storage
+                this.transitStorage.delete(transitId);
+
+                // Process the complete message
+                this.processCompleteMessage(
+                    transitData.method,
+                    completeInput,
+                    socket
+                );
+            } catch (error) {
+                if (this.debugLog) {
+                    this.logger({
+                        error: true,
+                        message: `Error reassembling transit message: ${error}`,
+                    });
+                }
+                // Clean up transit storage on error
+                this.transitStorage.delete(transitId);
+            }
+        }
+    }
+
+    // Process complete message after chunk reassembly
+    private processCompleteMessage(
+        methodName: string,
+        input: any,
+        socket: TSocket
+    ) {
+        const method = this.methodCollection[methodName];
+        if (!method) {
+            if (this.debugLog) {
+                this.logger({
+                    message: `Ignoring unfound method: ${methodName}`,
+                });
+            }
+            return;
+        }
+
+        try {
+            const validatedInput = method.schema
+                ? method.schema.parse(input)
+                : input;
+
+            // Execute the method handler without sending automatic response
+            method.handler(validatedInput, socket).catch((error) => {
+                if (this.debugLog) {
+                    this.logger({
+                        error: true,
+                        message: `Method execution error: ${error}`,
+                    });
+                }
+
+                // Execute default "error" function if it exists
+                const errorHandler = this.methodCollection["error"];
+                if (errorHandler) {
+                    errorHandler
+                        .handler({ error: error.message }, socket)
+                        .catch((handlerError) => {
+                            if (this.debugLog) {
+                                this.logger({
+                                    error: true,
+                                    message: `Default 'error' handler error: ${handlerError}`,
+                                });
+                            }
+                        });
+                }
+            });
+        } catch (error) {
+            if (error instanceof z.ZodError) {
+                if (this.debugLog) {
+                    this.logger({
+                        error: true,
+                        message: `Input validation failed for method ${methodName}: ${error.errors}`,
+                    });
+                }
+            } else {
+                if (this.debugLog) {
+                    this.logger({
+                        error: true,
+                        message: `Method execution error: ${error}`,
+                    });
+                }
             }
         }
     }
@@ -366,19 +797,6 @@ export default class VCONNPeer<
 
         // Note: onclose and onerror are now handled in the connect method
         // to support default functions and reconnection logic
-    }
-
-    private sendResponse(socket: TSocket, data: any) {
-        (socket as any).send(JSON.stringify({ data }));
-    }
-
-    private sendError(socket: TSocket, message: string, details?: any) {
-        (socket as any).send(
-            JSON.stringify({
-                error: message,
-                details,
-            })
-        );
     }
 
     // Returns dummy functions that match the type signatures
@@ -405,14 +823,31 @@ export default class VCONNPeer<
         return this.socket;
     }
 
-    // Get properly typed call methods
-    public getCaller<TMethodTypes extends MethodTypeCollection>(params: {
+    // Create properly typed call methods
+    public createCaller<TMethodTypes extends MethodTypeCollection>(params: {
         socket: TSocket;
         methods: TMethodTypes;
     }): CallableMethodsFromTypes<TMethodTypes> {
         const callHandler = new CallHandler<TMethodTypes, TSocket>(
-            params.methods
+            params.methods,
+            this.maxMessageLength,
+            this.safeCeiling
         );
         return callHandler.getCaller(params.socket);
+    }
+
+    // Public method to send responses manually
+    public sendResponse(socket: TSocket, data: any) {
+        (socket as any).send(JSON.stringify({ data }));
+    }
+
+    // Public method to send errors manually
+    public sendError(socket: TSocket, message: string, details?: any) {
+        (socket as any).send(
+            JSON.stringify({
+                error: message,
+                details,
+            })
+        );
     }
 }
