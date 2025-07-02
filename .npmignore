@@ -8,3 +8,5 @@ DOCS.md
 .git/
 .gitignore
 .gitattributes
+CONTRIBUTING.md
+pnpm-lock.yaml

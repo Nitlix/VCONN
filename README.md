@@ -1,6 +1,11 @@
 <div align="center">
   <h1>VCONN</h1>
   <h3>Lightweight, end-to-end type safe communications library.<br />Perfect for replacing Next.JS' Server Actions and tRPC.</h3>
+  
+  <a href="https://github.com/nitlix/vconn">
+    <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/nitlix/vconn?style=social">
+  </a>
+
   <a href="https://www.npmjs.com/package/vconn">
     <img alt="npm version" src="https://img.shields.io/npm/v/vconn.svg">
   </a>

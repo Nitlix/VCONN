@@ -1,4 +1,5 @@
 import VCONNClientConstructor from "./client";
 import VCONNServer from "./server";
+import VCONNPeer from "./peer";
 
-export { VCONNClientConstructor, VCONNServer };
+export { VCONNClientConstructor, VCONNServer, VCONNPeer };
